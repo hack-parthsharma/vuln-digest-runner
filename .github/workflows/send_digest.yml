@@ -16,19 +16,54 @@ jobs:
         env:
           TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
         run: |
-          MESSAGE=$(python3 -c "
-          import json, os
+          python3 - <<'PYEOF'
+          import json, os, urllib.request
+
           with open('latest.json') as f:
               d = json.load(f)
+
+          message = d.get('message', 'No content')
+          date    = d.get('date', 'Today')
+
+          if len(message) > 3000:
+              message = message[:2997] + '...'
+
           payload = {
-              '@type': 'MessageCard',
-              '@context': 'http://schema.org/extensions',
-              'themeColor': 'FF0000',
-              'summary': 'Daily Vulnerability Digest',
-              'sections': [{'activityTitle': '🔐 Daily Vulnerability Digest - ' + d.get('date','Today'), 'text': d.get('message','No content')}]
+              "type": "message",
+              "attachments": [
+                  {
+                      "contentType": "application/vnd.microsoft.card.adaptive",
+                      "content": {
+                          "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                          "type": "AdaptiveCard",
+                          "version": "1.4",
+                          "body": [
+                              {
+                                  "type": "TextBlock",
+                                  "text": f"🔐 Daily Vulnerability Digest — {date}",
+                                  "weight": "Bolder",
+                                  "size": "Medium",
+                                  "wrap": True
+                              },
+                              {
+                                  "type": "TextBlock",
+                                  "text": message,
+                                  "wrap": True
+                              }
+                          ]
+                      }
+                  }
+              ]
           }
-          print(json.dumps(payload))
-          ")
-          curl -X POST "$TEAMS_WEBHOOK_URL" \
-               -H "Content-Type: application/json" \
-               -d "$MESSAGE"
+
+          body = json.dumps(payload).encode()
+          req  = urllib.request.Request(
+              os.environ['TEAMS_WEBHOOK_URL'],
+              data=body,
+              headers={'Content-Type': 'application/json'},
+              method='POST'
+          )
+          with urllib.request.urlopen(req) as resp:
+              print("Status:", resp.status)
+              print("Response:", resp.read().decode())
+          PYEOF
