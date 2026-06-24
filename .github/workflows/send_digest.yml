@@ -25,36 +25,44 @@ jobs:
           message = d.get('message', 'No content')
           date    = d.get('date', 'Today')
 
-          def md_to_plain(text):
-              # Convert headers to visual separators
-              text = re.sub(r'^## (.+)$', r'━━━━━━━━━━\n\1\n━━━━━━━━━━', text, flags=re.MULTILINE)
-              text = re.sub(r'^### (.+)$', r'▸ \1', text, flags=re.MULTILINE)
-              # Remove bold markers but keep text
-              text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
-              # Keep bullet points as-is (they read fine in plain text)
-              return text
+          def md_to_html(text):
+              # Split into findings
+              sections = re.split(r'(?=\*\*Finding \d+)', text)
+              html = ''
+              for section in sections:
+                  if not section.strip():
+                      continue
+                  # Finding headers
+                  section = re.sub(r'\*\*(Finding \d+)\*\*', r'<br><b>--- \1 ---</b><br>', section)
+                  # Bold
+                  section = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', section)
+                  # Bullet lines
+                  section = re.sub(r'^- (.+)$', r'&nbsp;&nbsp;• \1<br>', section, flags=re.MULTILINE)
+                  # Line breaks
+                  section = section.replace('\n', '<br>')
+                  html += section
+              return html
 
-          plain_message = md_to_plain(message)
+          html_message = md_to_html(message)
 
-          # Split into chunks
           CHUNK_SIZE = 7000
-          chunks = [plain_message[i:i+CHUNK_SIZE] for i in range(0, len(plain_message), CHUNK_SIZE)]
+          chunks = [html_message[i:i+CHUNK_SIZE] for i in range(0, len(html_message), CHUNK_SIZE)]
 
           webhook_url = os.environ['TEAMS_WEBHOOK_URL']
 
           for i, chunk in enumerate(chunks):
               if i == 0:
-                  part_label = f"🔐 Vulnerability Digest — {date}"
+                  header = f"<b>🔐 Vulnerability Digest — {date}</b><br><br>"
               else:
-                  part_label = f"🔐 Vulnerability Digest — {date} (cont. {i+1})"
+                  header = f"<b>🔐 Vulnerability Digest — {date} (cont. {i+1})</b><br><br>"
 
               payload = {
                   "date": date,
-                  "message": f"{part_label}\n\n{chunk}"
+                  "message": header + chunk
               }
 
               body = json.dumps(payload).encode()
-              req  = urllib.request.Request(
+              req = urllib.request.Request(
                   webhook_url,
                   data=body,
                   headers={
