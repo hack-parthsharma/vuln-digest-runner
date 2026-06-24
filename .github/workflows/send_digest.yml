@@ -25,25 +25,29 @@ jobs:
           message = d.get('message', 'No content')
           date    = d.get('date', 'Today')
 
-          def md_to_html(text):
-              # Split into findings
-              sections = re.split(r'(?=\*\*Finding \d+)', text)
-              html = ''
-              for section in sections:
-                  if not section.strip():
-                      continue
-                  # Finding headers
-                  section = re.sub(r'\*\*(Finding \d+)\*\*', r'<br><b>--- \1 ---</b><br>', section)
-                  # Bold
-                  section = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', section)
-                  # Bullet lines
-                  section = re.sub(r'^- (.+)$', r'&nbsp;&nbsp;• \1<br>', section, flags=re.MULTILINE)
-                  # Line breaks
-                  section = section.replace('\n', '<br>')
-                  html += section
-              return html
+          def format_for_teams(text):
+              # Section headers
+              text = re.sub(r'^## (.+)$', r'<br><b>🔐 \1</b><br>', text, flags=re.MULTILINE)
+              # Finding headers
+              text = re.sub(r'\*\*(Finding \d+)\*\*', r'<br><b>─── \1 ───</b><br>', text)
+              # Other bold section headers
+              text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+              # Severity with color emoji
+              text = re.sub(r'(Severity: Critical[^\n<]*)', r'🔴 <b>\1</b>', text)
+              text = re.sub(r'(Severity: High[^\n<]*)', r'🟠 <b>\1</b>', text)
+              text = re.sub(r'(Severity: Medium[^\n<]*)', r'🟡 <b>\1</b>', text)
+              text = re.sub(r'(Severity: Low[^\n<]*)', r'🟢 <b>\1</b>', text)
+              # Bullet fields - bold the label
+              text = re.sub(r'^- (Product|Issue|Severity|Description|Relevance|Sources?|Closing):', r'<br>&nbsp;&nbsp;• <b>\1:</b>', text, flags=re.MULTILINE)
+              # Remaining bullet lines
+              text = re.sub(r'^- (.+)$', r'<br>&nbsp;&nbsp;• \1', text, flags=re.MULTILINE)
+              # Newlines to breaks
+              text = text.replace('\n', '<br>')
+              # Clean up excessive breaks
+              text = re.sub(r'(<br>\s*){3,}', '<br><br>', text)
+              return text.strip()
 
-          html_message = md_to_html(message)
+          html_message = format_for_teams(message)
 
           CHUNK_SIZE = 7000
           chunks = [html_message[i:i+CHUNK_SIZE] for i in range(0, len(html_message), CHUNK_SIZE)]
