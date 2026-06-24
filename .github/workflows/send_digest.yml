@@ -17,7 +17,7 @@ jobs:
           TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
         run: |
           python3 - <<'PYEOF'
-          import json, os, urllib.request
+          import json, os, urllib.request, re, time
 
           with open('latest.json') as f:
               d = json.load(f)
@@ -25,28 +25,59 @@ jobs:
           message = d.get('message', 'No content')
           date    = d.get('date', 'Today')
 
-          if len(message) > 3000:
-              message = message[:2997] + '...'
+          def md_to_html(text):
+              # Headers
+              text = re.sub(r'^## (.+)$', r'<h2>\1</h2>', text, flags=re.MULTILINE)
+              text = re.sub(r'^### (.+)$', r'<h3>\1</h3>', text, flags=re.MULTILINE)
+              # Bold
+              text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
+              # Bullet points
+              text = re.sub(r'^- (.+)$', r'<li>\1</li>', text, flags=re.MULTILINE)
+              # Line breaks
+              text = text.replace('\n', '<br>')
+              return text
 
-          # Simple payload - Power Automate handles the Teams formatting
-          payload = {
-              "date": date,
-              "message": message
-          }
+          html_message = md_to_html(message)
 
-          body = json.dumps(payload).encode()
-          req  = urllib.request.Request(
-              os.environ['TEAMS_WEBHOOK_URL'],
-              data=body,
-              headers={'Content-Type': 'application/json'},
-              method='POST'
-          )
-          try:
-              with urllib.request.urlopen(req) as resp:
-                  print("Status:", resp.status)
-                  print("Response:", resp.read().decode())
-          except urllib.error.HTTPError as e:
-              print("HTTP Error:", e.code, e.reason)
-              print("Response:", e.read().decode())
-              raise
+          # Split into chunks to avoid Teams limits
+          CHUNK_SIZE = 7000
+          chunks = [html_message[i:i+CHUNK_SIZE] for i in range(0, len(html_message), CHUNK_SIZE)]
+
+          webhook_url = os.environ['TEAMS_WEBHOOK_URL']
+
+          for i, chunk in enumerate(chunks):
+              if i == 0:
+                  part_label = f"🔐 Vulnerability Digest — {date}"
+              else:
+                  part_label = f"🔐 Vulnerability Digest — {date} (cont. {i+1})"
+
+              payload = {
+                  "date": date,
+                  "message": f"<h2>{part_label}</h2><br>{chunk}"
+              }
+
+              body = json.dumps(payload).encode()
+              req  = urllib.request.Request(
+                  webhook_url,
+                  data=body,
+                  headers={
+                      'Content-Type': 'application/json',
+                      'Accept': 'application/json'
+                  },
+                  method='POST'
+              )
+              try:
+                  with urllib.request.urlopen(req) as resp:
+                      print(f"Chunk {i+1}/{len(chunks)} — Status:", resp.status)
+                      print("Response:", resp.read().decode())
+              except urllib.error.HTTPError as e:
+                  print(f"Chunk {i+1} — HTTP Error:", e.code, e.reason)
+                  print("Response:", e.read().decode())
+                  raise
+
+              # Small delay between chunks to avoid rate limiting
+              if i < len(chunks) - 1:
+                  time.sleep(2)
+
+          print(f"Done — sent {len(chunks)} message(s) to Teams.")
           PYEOF
