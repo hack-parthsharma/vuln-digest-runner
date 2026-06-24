@@ -25,23 +25,20 @@ jobs:
           message = d.get('message', 'No content')
           date    = d.get('date', 'Today')
 
-          def md_to_html(text):
-              # Headers
-              text = re.sub(r'^## (.+)$', r'<h2>\1</h2>', text, flags=re.MULTILINE)
-              text = re.sub(r'^### (.+)$', r'<h3>\1</h3>', text, flags=re.MULTILINE)
-              # Bold
-              text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
-              # Bullet points
-              text = re.sub(r'^- (.+)$', r'<li>\1</li>', text, flags=re.MULTILINE)
-              # Line breaks
-              text = text.replace('\n', '<br>')
+          def md_to_plain(text):
+              # Convert headers to visual separators
+              text = re.sub(r'^## (.+)$', r'━━━━━━━━━━\n\1\n━━━━━━━━━━', text, flags=re.MULTILINE)
+              text = re.sub(r'^### (.+)$', r'▸ \1', text, flags=re.MULTILINE)
+              # Remove bold markers but keep text
+              text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+              # Keep bullet points as-is (they read fine in plain text)
               return text
 
-          html_message = md_to_html(message)
+          plain_message = md_to_plain(message)
 
-          # Split into chunks to avoid Teams limits
+          # Split into chunks
           CHUNK_SIZE = 7000
-          chunks = [html_message[i:i+CHUNK_SIZE] for i in range(0, len(html_message), CHUNK_SIZE)]
+          chunks = [plain_message[i:i+CHUNK_SIZE] for i in range(0, len(plain_message), CHUNK_SIZE)]
 
           webhook_url = os.environ['TEAMS_WEBHOOK_URL']
 
@@ -53,7 +50,7 @@ jobs:
 
               payload = {
                   "date": date,
-                  "message": f"<h2>{part_label}</h2><br>{chunk}"
+                  "message": f"{part_label}\n\n{chunk}"
               }
 
               body = json.dumps(payload).encode()
@@ -75,7 +72,6 @@ jobs:
                   print("Response:", e.read().decode())
                   raise
 
-              # Small delay between chunks to avoid rate limiting
               if i < len(chunks) - 1:
                   time.sleep(2)
 
