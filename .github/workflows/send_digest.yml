@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'latest.json'
+  workflow_dispatch:
 
 jobs:
   send-to-teams:
@@ -25,9 +26,17 @@ jobs:
           message = d.get('message', 'No content')
           date    = d.get('date', 'Today')
 
+          def md_link(m):
+              label, url = m.group(1), m.group(2).replace('"', '%22')
+              return f'<a href="{url}">{label}</a>'
+
           def format_for_teams(text):
+              # Sub-section headers (###, ####, ...) - must run before the ## rule
+              text = re.sub(r'^#{3,6}[ \t]+(.+?)[ \t#]*$', r'<br><b>▸ \1</b><br>', text, flags=re.MULTILINE)
               # Section headers
               text = re.sub(r'^## (.+)$', r'<br><b>🔐 \1</b><br>', text, flags=re.MULTILINE)
+              # Markdown links [text](https://...) -> clickable links
+              text = re.sub(r'\[([^\]\n]+)\]\((https?://[^\s)]+)\)', md_link, text)
               # Finding headers
               text = re.sub(r'\*\*(Finding \d+)\*\*', r'<br><b>─── \1 ───</b><br>', text)
               # Other bold section headers
@@ -49,8 +58,16 @@ jobs:
 
           html_message = format_for_teams(message)
 
+          # Split on <br> boundaries so a chunk never cuts through a tag or link
           CHUNK_SIZE = 7000
-          chunks = [html_message[i:i+CHUNK_SIZE] for i in range(0, len(html_message), CHUNK_SIZE)]
+          chunks, rest = [], html_message
+          while len(rest) > CHUNK_SIZE:
+              cut = rest.rfind('<br>', 0, CHUNK_SIZE)
+              if cut <= 0:
+                  cut = CHUNK_SIZE
+              chunks.append(rest[:cut])
+              rest = re.sub(r'^(<br>\s*)+', '', rest[cut:])
+          chunks.append(rest)
 
           webhook_url = os.environ['TEAMS_WEBHOOK_URL']
 
